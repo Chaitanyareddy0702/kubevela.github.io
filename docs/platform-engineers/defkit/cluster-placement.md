@@ -252,6 +252,124 @@ comp := defkit.NewComponent("enterprise-ingress").
     Params(defkit.String("image"))
 ```
 
+## Module-Wide Placement (`module.yaml`)
+
+The Go API above sets placement on a single definition. For constraints that should apply to **every** definition in a module, declare them in `module.yaml` under `spec.placement`. They are evaluated by `vela def apply-module` at module-load time, before any per-definition rules.
+
+Where this is useful:
+
+- A module of AWS-only definitions that should never apply to GCP/Azure clusters — declare it once at the module level instead of repeating on each definition.
+- A module that must never run on virtual clusters (`vcluster`) — one `notRunOn` rule blocks the whole module.
+
+### YAML schema
+
+```yaml title="module.yaml — module-wide placement"
+apiVersion: core.oam.dev/v1beta1
+kind: DefinitionModule
+metadata:
+  name: my-platform
+spec:
+  placement:
+    runOn:
+      - key: provider
+        operator: In
+        values: ["aws", "gcp"]
+    notRunOn:
+      - key: cluster-type
+        operator: Eq
+        values: ["vcluster"]
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `runOn` | `[]Condition` | All conditions must match for definitions in this module to be applied. Omit (or leave empty) to skip the gate. |
+| `notRunOn` | `[]Condition` | If any condition matches, every definition in the module is skipped. |
+
+Each `Condition` has the same shape as the Go-API `placement.Label(...)` chain, but expressed in YAML:
+
+| Field | Type | Description |
+|---|---|---|
+| `key` | string | Cluster label key to match against. |
+| `operator` | string | One of `Eq`, `Ne`, `In`, `NotIn`, `Exists`, `NotExists`. |
+| `values` | `[]string` | Values to compare against. Required for `Eq`/`Ne`/`In`/`NotIn`. Ignored by `Exists`/`NotExists`. |
+
+These operator strings come straight from `pkg/definition/defkit/placement/types.go:32-44` — they are case-sensitive and must match exactly. `Operator: equals` or `Operator: ==` will fail to parse.
+
+### Module-wide vs per-definition — **override**, not merge
+
+`module.yaml` placement and per-definition `.RunOn(...)` / `.NotRunOn(...)` do **not** combine. They override:
+
+- If a definition has **any** per-definition placement, its module-wide rules are **ignored** completely (per `placement.GetEffectivePlacement` at `pkg/definition/defkit/placement/types.go:142-149`).
+- If a definition has **no** per-definition placement, it inherits the module-wide rules.
+
+So the module-wide block acts as a **default** for definitions that don't set their own constraints. To enforce a constraint on every definition in a module regardless of per-definition rules, you must include it in each definition's `.RunOn(...)` / `.NotRunOn(...)` — there is no global override.
+
+Module hooks (`pre-apply` / `post-apply`) are **not** gated by placement; they always run regardless of whether any definitions were skipped.
+
+The CLI logs each skip with the failing condition, e.g.:
+
+```text
+ComponentDefinition simple-deploy: skipped (runOn conditions not satisfied: provider = k3d)
+```
+
+### Where cluster labels come from
+
+Placement does **not** read labels from Kubernetes Node objects. It reads from a **ConfigMap** named `vela-cluster-identity` in the `vela-system` namespace (see `pkg/definition/defkit/placement/cluster.go:30-65`):
+
+```yaml title="vela-cluster-identity ConfigMap"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vela-cluster-identity
+  namespace: vela-system
+data:
+  provider: aws
+  env: production
+  cluster-type: eks
+  gpu: "true"
+```
+
+Each key/value in `data:` is treated as one cluster label. If the ConfigMap is absent, the placement evaluator returns an empty label map (no error) — `runOn` rules will then fail (no labels to satisfy them) and `notRunOn` rules pass trivially.
+
+`vela def apply-module` prints the labels at the start of every run so you can see exactly what placement is evaluating against:
+
+```text
+Checking placement constraints...
+Cluster labels: provider=aws, env=production
+```
+
+A `Cluster labels: (no labels)` line means the ConfigMap is missing or empty.
+
+### Live example — block virtual clusters from a whole module
+
+```yaml title="module.yaml"
+apiVersion: core.oam.dev/v1beta1
+kind: DefinitionModule
+metadata:
+  name: defkit-demo
+spec:
+  description: Demo module — no vclusters allowed.
+
+  placement:
+    notRunOn:
+      - key: cluster-type
+        operator: Eq
+        values: ["vcluster"]
+```
+
+On a cluster labeled `cluster-type=vcluster`, `vela def apply-module` reports the module is filtered out and applies nothing. On any other cluster, every definition in the module is evaluated against its own per-definition rules (if any) and applied normally.
+
+:::tip Inspect cluster labels
+`vela def apply-module` prints the labels it evaluates against at start of run:
+
+```text
+Checking placement constraints...
+Cluster labels: provider=aws, env=production
+```
+
+If the line shows `(no labels)`, your cluster has none of the labels referenced by your placement constraints — `runOn` rules will fail unless they only use `NotExists`, and `notRunOn` rules will pass trivially.
+:::
+
 ```cue title="CUE — generated"
 "enterprise-ingress": {
     type: "component"
