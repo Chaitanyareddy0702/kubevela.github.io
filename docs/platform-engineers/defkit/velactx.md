@@ -88,12 +88,16 @@ hpa := defkit.NewResourceWithConditionalVersion("HorizontalPodAutoscaler").
 ```
 
 ```cue title="CUE — generated"
-apiVersion: {
-    if context.clusterVersion.minor < 23 { "autoscaling/v2beta2" }
-    if context.clusterVersion.minor >= 23 { "autoscaling/v2" }
+if context.clusterVersion.minor < 23 {
+    apiVersion: "autoscaling/v2beta2"
 }
-kind: "HorizontalPodAutoscaler"
-metadata: name: context.name
+if context.clusterVersion.minor >= 23 {
+    apiVersion: "autoscaling/v2"
+}
+kind:       "HorizontalPodAutoscaler"
+metadata: {
+    name: context.name
+}
 ```
 
 ## Usage in String Interpolation

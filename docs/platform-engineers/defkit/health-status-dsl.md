@@ -17,13 +17,13 @@ The fastest way to add health and status to common workload types.
 | Preset | Type | Description |
 |---|---|---|
 | `DeploymentHealth()` | Health | Checks replicas == readyReplicas == updatedReplicas |
-| `DeploymentStatus()` | Status | Shows "Ready: X/Y Updated: Z" |
-| `StatefulSetHealth()` | Health | Checks replicas == readyReplicas |
+| `DeploymentStatus()` | Status | Shows "Ready: X/Y" (readyReplicas vs spec.replicas) |
+| `StatefulSetHealth()` | Health | Checks readyReplicas == updatedReplicas == spec.replicas, plus observedGeneration |
 | `StatefulSetStatus()` | Status | Shows "Ready: X/Y" for StatefulSets |
-| `DaemonSetHealth()` | Health | Checks numberReady == desiredNumberScheduled |
-| `DaemonSetStatus()` | Status | Shows "Ready: X Desired: Y" |
-| `JobHealth()` | Health | Checks succeeded > 0 |
-| `CronJobHealth()` | Health | Checks active Jobs and last schedule time |
+| `DaemonSetHealth()` | Health | Checks numberReady == desiredNumberScheduled == currentNumberScheduled == updatedNumberScheduled, plus observedGeneration |
+| `DaemonSetStatus()` | Status | Shows "Ready: X/Y" (numberReady vs desiredNumberScheduled) |
+| `JobHealth()` | Health | Checks status.succeeded == spec.parallelism |
+| `CronJobHealth()` | Health | Always healthy if the CronJob resource exists |
 
 String helpers: `StatusEq(left, right)`, `StatusGte(left, right)`, `StatusOr(conditions...)`, `StatusAnd(conditions...)`.
 
@@ -45,22 +45,87 @@ return defkit.NewComponent("daemon").
     HealthPolicy(defkit.DaemonSetHealth().Build())
 ```
 
-```cue title="CUE — standard health policies"
-// JobHealth checks for completion
-isHealth:
-    context.output.status.succeeded > 0
+```cue title="CUE — JobHealth().Build()"
+succeeded: *0 | int
+if context.output.status.succeeded != _|_ {
+    succeeded: context.output.status.succeeded
+}
+isHealth: succeeded == context.output.spec.parallelism
+```
 
-// DeploymentHealth checks all replicas ready
-isHealth:
-    context.output.spec.replicas ==
-    context.output.status.readyReplicas &&
-    context.output.spec.replicas ==
-    context.output.status.updatedReplicas
+```cue title="CUE — CronJobHealth().Build()"
+isHealth: true
+```
 
-// DaemonSetHealth checks desired == ready
-isHealth:
-    context.output.status.numberReady ==
-    context.output.status.desiredNumberScheduled
+```cue title="CUE — DeploymentHealth().Build()"
+ready: {
+    updatedReplicas:    *0 | int
+    readyReplicas:      *0 | int
+    replicas:           *0 | int
+    observedGeneration: *0 | int
+} & {
+    if context.output.status.updatedReplicas != _|_ {
+        updatedReplicas: context.output.status.updatedReplicas
+    }
+    if context.output.status.readyReplicas != _|_ {
+        readyReplicas: context.output.status.readyReplicas
+    }
+    if context.output.status.replicas != _|_ {
+        replicas: context.output.status.replicas
+    }
+    if context.output.status.observedGeneration != _|_ {
+        observedGeneration: context.output.status.observedGeneration
+    }
+}
+_isHealth: (context.output.spec.replicas == ready.readyReplicas) && (context.output.spec.replicas == ready.updatedReplicas) && (context.output.spec.replicas == ready.replicas) && (ready.observedGeneration == context.output.metadata.generation || ready.observedGeneration > context.output.metadata.generation)
+isHealth: *_isHealth | bool
+if context.output.metadata.annotations != _|_ {
+    if context.output.metadata.annotations["app.oam.dev/disable-health-check"] != _|_ {
+        isHealth: true
+    }
+}
+```
+
+`DeploymentHealth()` uses `.WithDefault()` (the `_isHealth` / `isHealth: *_isHealth | bool` pattern) and `.WithDisableAnnotation("app.oam.dev/disable-health-check")` so applications can opt out via metadata.
+
+```cue title="CUE — DaemonSetHealth().Build()"
+ready: {
+    replicas: *0 | int
+} & {
+    if context.output.status.numberReady != _|_ {
+        replicas: context.output.status.numberReady
+    }
+}
+desired: {
+    replicas: *0 | int
+} & {
+    if context.output.status.desiredNumberScheduled != _|_ {
+        replicas: context.output.status.desiredNumberScheduled
+    }
+}
+current: {
+    replicas: *0 | int
+} & {
+    if context.output.status.currentNumberScheduled != _|_ {
+        replicas: context.output.status.currentNumberScheduled
+    }
+}
+updated: {
+    replicas: *0 | int
+} & {
+    if context.output.status.updatedNumberScheduled != _|_ {
+        replicas: context.output.status.updatedNumberScheduled
+    }
+}
+generation: {
+    metadata: context.output.metadata.generation
+    observed: *0 | int
+} & {
+    if context.output.status.observedGeneration != _|_ {
+        observed: context.output.status.observedGeneration
+    }
+}
+isHealth: (desired.replicas == ready.replicas) && (desired.replicas == updated.replicas) && (desired.replicas == current.replicas) && (generation.observed == generation.metadata || generation.observed > generation.metadata)
 ```
 
 ### `defkit.DeploymentStatus()` / `defkit.DaemonSetStatus()`
@@ -79,19 +144,36 @@ return defkit.NewComponent("daemon").
     HealthPolicy(defkit.DaemonSetHealth().Build())
 ```
 
-```cue title="CUE — generated customStatus"
-// DeploymentStatus
-customStatus: {
-    let status = { ready: ..., updated: ..., total: ... }
-    message: "Ready:\(status.ready)/\(status.total) Updated:\(status.updated)"
+```cue title="CUE — DeploymentStatus().Build()"
+ready: {
+    readyReplicas: *0 | int
+} & {
+    if context.output.status.readyReplicas != _|_ {
+        readyReplicas: context.output.status.readyReplicas
+    }
 }
-
-// DaemonSetStatus
-customStatus: {
-    let status = { ready: ..., desired: ... }
-    message: "Ready:\(status.ready) Desired:\(status.desired)"
-}
+message: "Ready:\(ready.readyReplicas)/\(context.output.spec.replicas)"
 ```
+
+```cue title="CUE — DaemonSetStatus().Build()"
+ready: {
+    replicas: *0 | int
+} & {
+    if context.output.status.numberReady != _|_ {
+        replicas: context.output.status.numberReady
+    }
+}
+desired: {
+    replicas: *0 | int
+} & {
+    if context.output.status.desiredNumberScheduled != _|_ {
+        replicas: context.output.status.desiredNumberScheduled
+    }
+}
+message: "Ready:\(ready.replicas)/\(desired.replicas)"
+```
+
+These builders emit field declarations and the `message:` line directly. The `customStatus: { ... }` wrapper around them is added by the definition renderer when these builders feed into `.CustomStatus()` (see the [Complete Example](#complete-example--database-component) at the bottom of this page).
 
 ## Health DSL — `defkit.Health()`
 
@@ -133,21 +215,29 @@ return defkit.NewComponent("worker").
 ```
 
 ```cue title="CUE — generated healthPolicy"
-isHealth: {
-    let ready = {
-        updatedReplicas:    *0 | int & context.output.status.updatedReplicas
-        readyReplicas:      *0 | int & context.output.status.readyReplicas
-        replicas:           *0 | int & context.output.status.replicas
-        observedGeneration: *0 | int & context.output.status.observedGeneration
+ready: {
+    updatedReplicas:    *0 | int
+    readyReplicas:      *0 | int
+    replicas:           *0 | int
+    observedGeneration: *0 | int
+} & {
+    if context.output.status.updatedReplicas != _|_ {
+        updatedReplicas: context.output.status.updatedReplicas
     }
-    isHealth:
-        context.output.spec.replicas == ready.readyReplicas &&
-        context.output.spec.replicas == ready.updatedReplicas &&
-        context.output.spec.replicas == ready.replicas &&
-        (ready.observedGeneration == context.output.metadata.generation ||
-         ready.observedGeneration > context.output.metadata.generation)
+    if context.output.status.readyReplicas != _|_ {
+        readyReplicas: context.output.status.readyReplicas
+    }
+    if context.output.status.replicas != _|_ {
+        replicas: context.output.status.replicas
+    }
+    if context.output.status.observedGeneration != _|_ {
+        observedGeneration: context.output.status.observedGeneration
+    }
 }
+isHealth: (context.output.spec.replicas == ready.readyReplicas) && (context.output.spec.replicas == ready.updatedReplicas) && (context.output.spec.replicas == ready.replicas) && (ready.observedGeneration == context.output.metadata.generation || ready.observedGeneration > context.output.metadata.generation)
 ```
+
+Each `IntField(name, sourcePath, default)` declaration emits a default in the first block and a guarded `if … != _|_ { … }` override in the sibling block — `name` is split on dots, so `ready.readyReplicas` lands under a single `ready: {…}` group. Each entry passed to `HealthyWhen()` is auto-parenthesized and joined with `&&`.
 
 ## Composable Health API
 
@@ -307,15 +397,25 @@ return defkit.NewComponent("task").
 ```
 
 ```cue title="CUE — generated customStatus"
-customStatus: {
-    let status = {
-        active:    *0 | int & context.output.status.active
-        failed:    *0 | int & context.output.status.failed
-        succeeded: *0 | int & context.output.status.succeeded
+status: {
+    active:    *0 | int
+    failed:    *0 | int
+    succeeded: *0 | int
+} & {
+    if context.output.status.active != _|_ {
+        active: context.output.status.active
     }
-    message: "Active/Failed/Succeeded:\(status.active)/\(status.failed)/\(status.succeeded)"
+    if context.output.status.failed != _|_ {
+        failed: context.output.status.failed
+    }
+    if context.output.status.succeeded != _|_ {
+        succeeded: context.output.status.succeeded
+    }
 }
+message: "Active/Failed/Succeeded:\(status.active)/\(status.failed)/\(status.succeeded)"
 ```
+
+`Status().IntField(name, sourcePath, default)` follows the same pattern as `Health().IntField` — name dots group fields under a single struct, defaults go in the first block, conditional overrides in the sibling block. The `customStatus: { … }` wrapper is added by the definition renderer; the builder itself emits the contents.
 
 ### `s.Format()` / `s.Switch()`
 
@@ -340,6 +440,27 @@ if context.output.status.readyReplicas != _|_ {
     _readyReplicas: context.output.status.readyReplicas
 }
 message: "Ready: \(_readyReplicas)/\(context.output.spec.replicas)"
+```
+
+```cue title="CUE — generated (Switch)"
+message: *"Unknown status" | string
+if context.output.status.phase == "Running" {
+    message: "Service is running"
+}
+if context.output.status.phase == "Pending" {
+    message: "Service is starting..."
+}
+```
+
+`Switch` lays the default down as the disjunction default (`*<default> | string`) and overrides it with one `if cond { message: ... }` block per case. The cases are evaluated in declaration order; in CUE the last unifying override wins, so put more specific cases later if they overlap.
+
+`HealthAware(healthy, unhealthy)` follows the same shape with a single override:
+
+```cue title="CUE — generated (HealthAware)"
+message: *"Service degraded" | string
+if context.status.healthy {
+    message: "All systems operational"
+}
 ```
 
 ### `.HealthPolicyExpr()` / `defkit.HealthPolicy(expr)` / `defkit.StatusPolicy(expr)`
@@ -429,7 +550,7 @@ database: {
 }
 template: {
     parameter: {
-        image:    string
+        image: string
         replicas: *3 | int
     }
 }

@@ -4,7 +4,7 @@ title: Value Expressions
 
 Value expressions are deferred-evaluation constructors and condition builders. Values compile into CUE expressions — they are not evaluated immediately in Go.
 
-## Value Constructors
+## Constructors
 
 ### Constructors Summary
 
@@ -147,8 +147,8 @@ Chain methods on `*Param` that produce condition values.
 cmd    := defkit.StringList("cmd")
 create := defkit.Bool("create").Default(false)
 cpu    := defkit.Struct("cpu").WithFields(
-    defkit.String("type").Default("Utilization"),
-    defkit.Int("value").Default(50),
+    defkit.Field("type", defkit.ParamTypeString).Default("Utilization"),
+    defkit.Field("value", defkit.ParamTypeInt).Default(50),
 )
 
 .SetIf(cmd.IsSet(), "spec.template.spec.containers[0].command", cmd)
@@ -285,8 +285,8 @@ tpl.OutputsGroupIf(
 
 ```cue title="CUE — generated"
 let _clusterPrivileges = [
-    if parameter["privileges"] != _|_ for p in parameter.privileges
-    if p.scope == "cluster" { p }
+    if parameter["privileges"] != _|_ for v in parameter.privileges
+    if v.scope == "cluster" { v }
 ]
 
 rules: [for r in _clusterPrivileges { ... }]
