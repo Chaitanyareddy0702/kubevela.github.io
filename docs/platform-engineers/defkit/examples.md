@@ -2,13 +2,19 @@
 title: Full Examples
 ---
 
-Complete end-to-end definition examples — one per definition type — showing real-world usage patterns with full Go code and generated CUE output.
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+Complete end-to-end definition examples — one per definition type — showing real-world usage patterns with full Go source, generated definition YAML, and a working `Application` validated against a live cluster.
 
 ## Component Definition — Task
 
 A complete task component that runs a one-time Job to completion. Uses `JobHealth`/`CustomStatus` presets, `OneOf` for typed volume variants, `Each` for volumeMount/volume array mapping, and `MapVariant` for per-type volume configuration.
 
-```go title="Go — components/task.go"
+<Tabs>
+<TabItem value="go" label="Go — defkit">
+
+```go title="components/task.go"
 package components
 
 import (
@@ -199,7 +205,10 @@ func init() {
 }
 ```
 
-```yaml title="Generated — ComponentDefinition (vela def apply-module --dry-run)"
+</TabItem>
+<TabItem value="cue" label="Generated — definition YAML">
+
+```yaml title="ComponentDefinition (vela def apply-module --dry-run)"
 apiVersion: core.oam.dev/v1beta1
 kind: ComponentDefinition
 metadata:
@@ -452,11 +461,61 @@ spec:
     type: jobs.batch
 ```
 
+</TabItem>
+<TabItem value="application" label="Application YAML">
+
+```yaml title="task-demo-app.yaml"
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: task-demo
+  namespace: default
+spec:
+  components:
+    - name: hello-task
+      type: task
+      properties:
+        image: busybox:latest
+        count: 1
+        restart: Never
+        cmd: ["sh", "-c", "echo hello && sleep 5 && echo done"]
+```
+
+</TabItem>
+</Tabs>
+
+Apply and verify (output captured live from k3d):
+
+```shell
+vela def apply ./vela-templates/definitions/component/task.cue
+vela up -f task-demo-app.yaml
+```
+
+```
+NAME        COMPONENT    TYPE   PHASE     HEALTHY   STATUS                          AGE
+task-demo   hello-task   task   running   true      Active/Failed/Succeeded:0/0/1   51s
+```
+
+The component renders to a `batch/v1` Job named `<appName>-<componentName>`:
+
+```shell
+$ kubectl get job task-demo-hello-task -n default \
+    -o jsonpath='completions={.spec.completions} image={.spec.template.spec.containers[0].image} restartPolicy={.spec.template.spec.restartPolicy} status={.status.succeeded}'
+completions=1 image=busybox:latest restartPolicy=Never status=1
+
+$ kubectl get job task-demo-hello-task -n default \
+    -o jsonpath='{.spec.template.spec.containers[0].command}'
+["sh","-c","echo hello && sleep 5 && echo done"]
+```
+
 ## Trait Definition — CPUScaler
 
 A complete cpuscaler trait that creates an HPA resource to automatically scale the component based on CPU usage. Demonstrates `tpl.Outputs()` for emitting a secondary resource from a trait.
 
-```go title="Go — traits/cpuscaler.go"
+<Tabs>
+<TabItem value="go" label="Go — defkit">
+
+```go title="traits/cpuscaler.go"
 package traits
 
 import "github.com/oam-dev/kubevela/pkg/definition/defkit"
@@ -493,7 +552,10 @@ func init() {
 }
 ```
 
-```yaml title="Generated — TraitDefinition (vela def apply-module --dry-run)"
+</TabItem>
+<TabItem value="cue" label="Generated — definition YAML">
+
+```yaml title="TraitDefinition (vela def apply-module --dry-run)"
 apiVersion: core.oam.dev/v1beta1
 kind: TraitDefinition
 metadata:
@@ -539,11 +601,72 @@ spec:
         }
 ```
 
+</TabItem>
+<TabItem value="application" label="Application YAML">
+
+```yaml title="cpuscaler-demo-app.yaml"
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: cpuscaler-demo
+  namespace: default
+spec:
+  components:
+    - name: scaled-web
+      type: webservice
+      properties:
+        image: nginx:stable
+        ports:
+          - port: 80
+            expose: false
+        cpu: "100m"
+      traits:
+        - type: cpuscaler
+          properties:
+            min: 1
+            max: 3
+            cpuUtil: 50
+```
+
+</TabItem>
+</Tabs>
+
+Apply and verify (output captured live from k3d):
+
+```shell
+vela def apply ./vela-templates/definitions/trait/cpuscaler.cue
+vela up -f cpuscaler-demo-app.yaml
+```
+
+```
+NAME             COMPONENT    TYPE         PHASE     HEALTHY   STATUS      AGE
+cpuscaler-demo   scaled-web   webservice   running   true      Ready:1/1   51s
+```
+
+The trait emits a sibling `HorizontalPodAutoscaler` that targets the component's Deployment:
+
+```shell
+$ kubectl get hpa -n default
+NAME         REFERENCE               TARGETS       MINPODS   MAXPODS   REPLICAS   AGE
+scaled-web   Deployment/scaled-web   cpu: 0%/50%   1         3         1          71s
+
+$ kubectl get hpa scaled-web -n default \
+    -o jsonpath='kind={.spec.scaleTargetRef.kind} target={.spec.scaleTargetRef.name} min={.spec.minReplicas} max={.spec.maxReplicas}'
+kind=Deployment target=scaled-web min=1 max=3
+```
+
 ## Policy Definition — Apply Once
 
 A complete apply-once policy that allows configuration drift for applied resources. Demonstrates `defkit.NewPolicy` with inline `Helper` type definitions and `WithSchemaRef` for type reuse across params.
 
-```go title="Go — policies/apply_once.go"
+:::info
+Policies use only `.Params()` — no `.Template()` — because KubeVela's built-in engine processes policy params directly. `.Helper("TypeName", struct)` registers a named CUE type (`#TypeName`) that can be referenced via `.WithSchemaRef("TypeName")` in other params.
+:::
+
+<Tabs>
+<TabItem value="go" label="Go — defkit">
+
+```go title="policies/apply_once.go"
 package policies
 
 import "github.com/oam-dev/kubevela/pkg/definition/defkit"
@@ -593,7 +716,10 @@ func init() {
 }
 ```
 
-```yaml title="Generated — PolicyDefinition (vela def apply-module --dry-run)"
+</TabItem>
+<TabItem value="cue" label="Generated — definition YAML">
+
+```yaml title="PolicyDefinition (vela def apply-module --dry-run)"
 apiVersion: core.oam.dev/v1beta1
 kind: PolicyDefinition
 metadata:
@@ -640,15 +766,67 @@ spec:
         }
 ```
 
-:::info
-Policies use only `.Params()` — no `.Template()` — because KubeVela's built-in engine processes policy params directly. `.Helper("TypeName", struct)` registers a named CUE type (`#TypeName`) that can be referenced via `.WithSchemaRef("TypeName")` in other params.
-:::
+</TabItem>
+<TabItem value="application" label="Application YAML">
+
+```yaml title="apply-once-demo-app.yaml"
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: apply-once-demo
+  namespace: default
+spec:
+  components:
+    - name: drift-tolerant
+      type: webservice
+      properties:
+        image: nginx:stable
+        ports:
+          - port: 80
+            expose: false
+  policies:
+    - name: stable
+      type: apply-once
+      properties:
+        enable: true
+```
+
+</TabItem>
+</Tabs>
+
+Apply and verify (output captured live from k3d):
+
+```shell
+vela def apply ./vela-templates/definitions/policy/apply-once.cue
+vela up -f apply-once-demo-app.yaml
+```
+
+```
+NAME              COMPONENT        TYPE         PHASE     HEALTHY   STATUS      AGE
+apply-once-demo   drift-tolerant   webservice   running   true      Ready:1/1   51s
+```
+
+The policy is recorded on the Application's spec but emits no Kubernetes resources of its own — it changes how the controller reconciles existing ones:
+
+```shell
+$ kubectl get app apply-once-demo -n default -o jsonpath='{.spec.policies}' | python3 -m json.tool
+[
+    {
+        "name": "stable",
+        "properties": {"enable": true},
+        "type": "apply-once"
+    }
+]
+```
 
 ## WorkflowStep Definition — Apply Component
 
 A complete apply-component workflow step. The simplest definition type — workflow steps often require no template at all because the step execution is handled by KubeVela's built-in step executor.
 
-```go title="Go — workflowsteps/apply_component.go"
+<Tabs>
+<TabItem value="go" label="Go — defkit">
+
+```go title="workflowsteps/apply_component.go"
 package workflowsteps
 
 import "github.com/oam-dev/kubevela/pkg/definition/defkit"
@@ -670,7 +848,10 @@ func init() {
 }
 ```
 
-```yaml title="Generated — WorkflowStepDefinition (vela def apply-module --dry-run)"
+</TabItem>
+<TabItem value="cue" label="Generated — definition YAML">
+
+```yaml title="WorkflowStepDefinition (vela def apply-module --dry-run)"
 apiVersion: core.oam.dev/v1beta1
 kind: WorkflowStepDefinition
 metadata:
@@ -693,6 +874,74 @@ spec:
         	// +usage=Specify the namespace
         	namespace: *"" | string
         }
+```
+
+</TabItem>
+<TabItem value="application" label="Application YAML">
+
+```yaml title="workflow-demo-app.yaml"
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: workflow-demo
+  namespace: default
+spec:
+  components:
+    - name: web-a
+      type: webservice
+      properties:
+        image: nginx:stable
+        ports: [{port: 80, expose: false}]
+    - name: web-b
+      type: webservice
+      properties:
+        image: nginx:stable
+        ports: [{port: 80, expose: false}]
+  workflow:
+    steps:
+      - name: deploy-a
+        type: apply-component
+        properties:
+          component: web-a
+      - name: deploy-b
+        type: apply-component
+        properties:
+          component: web-b
+```
+
+</TabItem>
+</Tabs>
+
+Apply and verify (output captured live from k3d):
+
+```shell
+vela def apply ./vela-templates/definitions/workflowstep/apply-component.cue
+vela up -f workflow-demo-app.yaml
+```
+
+```
+NAME            COMPONENT   TYPE         PHASE     HEALTHY   STATUS      AGE
+workflow-demo   web-a       webservice   running   true      Ready:1/1   51s
+```
+
+Both steps execute in declared order and the workflow status records the final phase per step:
+
+```shell
+$ kubectl get app workflow-demo -n default -o jsonpath='{.status.workflow.steps}' | python3 -m json.tool
+[
+    {
+        "id": "nox3bf5n8y",
+        "name": "deploy-a",
+        "phase": "succeeded",
+        "type": "apply-component"
+    },
+    {
+        "id": "394hsuj65t",
+        "name": "deploy-b",
+        "phase": "succeeded",
+        "type": "apply-component"
+    }
+]
 ```
 
 :::tip Key patterns per type

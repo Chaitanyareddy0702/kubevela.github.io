@@ -196,25 +196,9 @@ template: {
 ```
 
 </TabItem>
-</Tabs>
+<TabItem value="application" label="Application YAML">
 
-Reproduce the CUE on the right with:
-
-```shell
-vela def validate-module ./my-platform
-vela def gen-module ./my-platform -o ./generated-cue
-```
-
-### Apply and verify
-
-Apply the definition and deploy a minimal Application:
-
-```shell
-vela def apply ./generated-cue/component/runtime-context-demo.cue
-```
-
-```yaml
-# ctx-demo-app.yaml
+```yaml title="ctx-demo-app.yaml"
 apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
@@ -228,8 +212,28 @@ spec:
         image: nginx:stable
 ```
 
+</TabItem>
+</Tabs>
+
+Reproduce the CUE on the right with:
+
 ```shell
+vela def validate-module ./my-platform
+vela def gen-module ./my-platform -o ./generated-cue
+```
+
+### Apply and verify
+
+Apply the definition and the Application YAML above:
+
+```shell
+vela def apply ./generated-cue/component/runtime-context-demo.cue
 vela up -f ctx-demo-app.yaml
+```
+
+```
+NAME           COMPONENT   TYPE                   PHASE     HEALTHY   STATUS   AGE
+ctx-demo-app   ctx-demo    runtime-context-demo   running   true               61s
 ```
 
 Once the Application reaches `phase: running`, verify the rendered `context.*` values against the real cluster. The Deployment annotations carry the cluster-version fields:

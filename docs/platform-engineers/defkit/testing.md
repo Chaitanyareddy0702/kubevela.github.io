@@ -507,6 +507,25 @@ template: {
 ```
 
 </TabItem>
+<TabItem value="application" label="Application YAML">
+
+```yaml title="testing-demo-app.yaml"
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: testing-demo-app
+  namespace: default
+spec:
+  components:
+    - name: testing-demo
+      type: testing-demo
+      properties:
+        image: nginx:stable
+        replicas: 1
+        port: 8080
+```
+
+</TabItem>
 </Tabs>
 
 Reproduce the CUE on the right with:

@@ -415,6 +415,35 @@ template: {
 ```
 
 </TabItem>
+<TabItem value="application" label="Application YAML">
+
+```yaml title="collections-demo-app.yaml"
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: collections-demo-app
+  namespace: default
+spec:
+  components:
+    - name: collections-demo-app
+      type: collections-demo
+      properties:
+        ports:
+          - { port: 8080, name: http, expose: true,  protocol: TCP }
+          - { port: 9000,               expose: false, protocol: TCP }
+        hosts:
+          - example.com
+          - api.example.com
+        volumes:
+          pvc:
+            - { name: data-vol,    claimName: data-pvc,    mountPath: /data }
+          configMap:
+            - { name: config-vol,  cmName: app-config,     mountPath: /etc/config }
+        extraLabels:
+          env: demo
+```
+
+</TabItem>
 </Tabs>
 
 Reproduce the CUE on the right with:
@@ -425,19 +454,16 @@ go run ./cmd/defkit generate --output-dir vela-templates/definitions
 
 ### Apply and verify
 
-Apply the definition and deploy a test Application:
+Apply the definition and the Application YAML above:
 
 ```shell
-$ vela def apply vela-templates/definitions/component/collections-demo.cue
-ComponentDefinition collections-demo created in namespace vela-system.
+vela def apply vela-templates/definitions/component/collections-demo.cue
+vela up -f collections-demo-app.yaml
+```
 
-$ vela up -f collections-demo-app.yaml
-✅ App has been deployed 🚀🚀🚀
-Application default/collections-demo-app applied.
-
-$ kubectl get application collections-demo-app -n default -o wide
+```
 NAME                   COMPONENT              TYPE               PHASE     HEALTHY   STATUS   AGE
-collections-demo-app   collections-demo-app   collections-demo   running   true               13s
+collections-demo-app   collections-demo-app   collections-demo   running   true               75s
 ```
 
 Inspect the rendered Deployment — the Guard + Filter pipeline emits only the `expose: true` port (8080), and the `FromFields` pipeline produces both volume types:
