@@ -31,8 +31,8 @@ spec:
     Minimal defkit demo module — one ComponentDefinition (simple-deploy)
     plus pre/post-apply hooks and module-wide placement constraints.
   maintainers:
-    - name: Vishal Kumar
-      email: viskumar@guidewire.com
+    - name: Platform Team
+      email: platform@example.com
   categories:
     - demo
 
@@ -252,20 +252,23 @@ If step 4 fails (a non-optional post-apply hook errors), the CLI exits non-zero 
 
 ## Complete Example — Demo Module
 
-The reference layout from `vela-go-definitions/examples/demo-module/`:
+A defkit module is just a Go module that registers one or more definitions and ships a `module.yaml` alongside them. The recommended on-disk layout puts each hook category in its own directory under `hooks/`:
 
 ```text title="module layout"
-demo-module/
+my-module/
 ├── module.yaml
+├── go.mod
 ├── components/
-│   └── simple_deploy.go
+│   └── simple_deploy.go        # defkit.NewComponent(...).Template(...) + init()/Register()
 └── hooks/
     ├── pre/
-    │   ├── 01-namespace.yaml     # applied first (alphabetical)
-    │   └── check-cluster.sh      # NOT applied — only the YAML files in this dir are picked up
+    │   ├── 01-namespace.yaml   # applied first (alphabetical) by a `path:` hook
+    │   └── check-cluster.sh    # NOT applied — only the YAML files in this dir are picked up
     └── post/
         └── smoke-test.sh
 ```
+
+You can name the directories anything you like — defkit only cares about the values you write into the `path:` and `script:` fields of `module.yaml`. The layout above is convention, not requirement. Scaffold a new module with [Quick Start](./quick-start.md).
 
 ```yaml title="module.yaml"
 apiVersion: core.oam.dev/v1beta1
@@ -277,8 +280,8 @@ spec:
     Minimal defkit demo module — one ComponentDefinition (simple-deploy)
     plus pre/post-apply hooks and module-wide placement constraints.
   maintainers:
-    - name: Vishal Kumar
-      email: viskumar@guidewire.com
+    - name: Platform Team
+      email: platform@example.com
   categories:
     - demo
 
