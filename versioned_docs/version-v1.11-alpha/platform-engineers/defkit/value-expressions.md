@@ -372,21 +372,9 @@ template: {
 ```
 
 </TabItem>
-</Tabs>
+<TabItem value="application" label="Application YAML">
 
-Reproduce the CUE on the right with:
-
-```shell
-vela def validate-module ./my-platform
-vela def gen-module ./my-platform -o ./generated-cue
-```
-
-Apply the definition and verify the rendered fields:
-
-```shell
-vela def apply ./generated-cue/components/namespaced-cache.cue
-
-kubectl apply -f - <<'EOF'
+```yaml title="cache-demo-app.yaml"
 apiVersion: core.oam.dev/v1beta1
 kind: Application
 metadata:
@@ -404,12 +392,35 @@ spec:
         enableTLS: false
         labels:
           env: staging
-EOF
-
-vela status cache-demo --watch
+          tier: backend
 ```
 
-Once the Application reaches `running`, inspect the rendered `Deployment` to confirm each value expression:
+</TabItem>
+</Tabs>
+
+Reproduce the CUE on the right with:
+
+```shell
+vela def validate-module ./my-platform
+vela def gen-module ./my-platform -o ./generated-cue
+```
+
+### Apply and verify
+
+Apply the definition and the Application YAML above against a live cluster:
+
+```shell
+vela def apply ./generated-cue/components/namespaced-cache.cue
+vela up -f cache-demo-app.yaml
+vela status cache-demo --namespace default
+```
+
+```
+NAME         COMPONENT   TYPE               PHASE     HEALTHY   STATUS   AGE
+cache-demo   my-cache    namespaced-cache   running   true               60s
+```
+
+Once the Application reaches `running`, inspect the rendered `Deployment` to confirm each value expression. Output below was captured live against a k3d cluster:
 
 ```shell
 $ kubectl get deployment my-cache -n default \
@@ -435,12 +446,8 @@ $ kubectl get deployment my-cache -n default \
 ]
 
 $ kubectl get deployment my-cache -n default \
-    -o jsonpath='{.spec.strategy.type}'
-RollingUpdate
-
-$ kubectl get deployment my-cache -n default \
-    -o jsonpath='{.metadata.labels.env}'
-staging
+    -o jsonpath='replicas={.spec.replicas} strategy={.spec.strategy.type} env-label={.metadata.labels.env}'
+replicas=2 strategy=RollingUpdate env-label=staging
 ```
 
 `REDIS_URL` uses `Interpolation` + `StringsToLower` (lowercasing `"TCP"` to `"tcp"`) + `StrconvFormatInt` (rendering `6379` as `"6379"`). `INSTANCE_KEY` is `Interpolation(namespace, ":", name)`. `INTERNAL_ADDR` is `Plus("cache.", namespace, ".svc")`. `TLS_DISABLED` appears because `ItemIf(Not(enableTLS.IsTrue()), ...)` fires when `enableTLS: false`. `strategy.type: RollingUpdate` appears because `SetIf(Gt(replicas, 1), ...)` fires for `replicas: 2`. The `env: staging` label comes from `SpreadIf(labels.IsSet(), ...)`.

@@ -381,6 +381,25 @@ template: {
 ```
 
 </TabItem>
+<TabItem value="application" label="Application YAML">
+
+```yaml title="health-aware-demo-app.yaml"
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: health-aware-demo
+  namespace: default
+spec:
+  components:
+    - name: health-demo
+      type: health-aware-service
+      properties:
+        image: nginx:stable
+        replicas: 1
+        port: 8080
+```
+
+</TabItem>
 </Tabs>
 
 Reproduce the CUE on the right with:
@@ -392,25 +411,16 @@ vela def gen-module ./my-platform -o ./generated-cue
 
 ## Apply and verify
 
-Apply the generated CUE definition and exercise it with a minimal Application:
+Apply the generated CUE definition and the Application YAML above:
 
 ```shell
 vela def apply ./generated-cue/component/health-aware-service.cue
-vela up -f - <<'EOF'
-apiVersion: core.oam.dev/v1beta1
-kind: Application
-metadata:
-  name: health-aware-demo
-  namespace: default
-spec:
-  components:
-    - name: health-aware-demo
-      type: health-aware-service
-      properties:
-        image: nginx:1.25
-        replicas: 1
-        port: 80
-EOF
+vela up -f health-aware-demo-app.yaml
+```
+
+```
+NAME                COMPONENT     TYPE                   PHASE     HEALTHY   STATUS       AGE
+health-aware-demo   health-demo   health-aware-service   running   true      Ready: 1/1   74s
 ```
 
 Once the Deployment reaches 1/1 ready, `vela status health-aware-demo` renders the health policy verdict and the custom status message from the DSL:
@@ -418,11 +428,11 @@ Once the Deployment reaches 1/1 ready, `vela status health-aware-demo` renders t
 ```
 About:
 
-  Name:         health-aware-demo
-  Namespace:    default
-  Created at:   2026-05-17 15:33:39 +0000 UTC
-  Healthy:      ✅
-  Details:      running
+  Name:      	health-aware-demo
+  Namespace: 	default
+  Created at:	2026-05-17 16:43:27 +0000 UTC
+  Healthy:   	✅
+  Details:   	running
 
 Workflow:
 
@@ -431,14 +441,14 @@ Workflow:
   Suspend: false
   Terminated: false
   Steps
-  - id: jtlz4ijqp3
-    name: health-aware-demo
+  - id: pna7iono4p
+    name: health-demo
     type: apply-component
     phase: succeeded
 
 Services:
 
-  - Name: health-aware-demo
+  - Name: health-demo
     Cluster: local
     Namespace: default
     Type: health-aware-service

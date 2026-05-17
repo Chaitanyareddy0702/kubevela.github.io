@@ -243,6 +243,39 @@ spec:
 ```
 
 </TabItem>
+<TabItem value="application" label="Application YAML">
+
+Once `placement-demo` has been admitted by `vela def apply-module` (Case B in [Apply and verify](#apply-and-verify) below), consume it from a regular Application. The component is filtered out of the cluster entirely in cases where placement fails, so this Application can only be deployed when the cluster identity matches.
+
+```yaml title="placement-demo-app.yaml"
+apiVersion: core.oam.dev/v1beta1
+kind: Application
+metadata:
+  name: placement-demo-app
+  namespace: default
+spec:
+  components:
+    - name: placement-demo
+      type: placement-demo
+      properties:
+        image: nginx:stable
+        replicas: 1
+        region: us-west-2
+```
+
+Live deploy + rendered Deployment fields against the same k3d cluster used in Case B below:
+
+```
+NAME                 COMPONENT        TYPE             PHASE     HEALTHY   STATUS   AGE
+placement-demo-app   placement-demo   placement-demo   running   true               87s
+```
+
+```shell
+kubectl get deployment placement-demo -o jsonpath='replicas={.spec.replicas} image={.spec.template.spec.containers[0].image} region-label={.spec.template.metadata.labels.region}'
+# replicas=1 image=nginx:stable region-label=us-west-2
+```
+
+</TabItem>
 </Tabs>
 
 Reproduce the CUE on the right with:
