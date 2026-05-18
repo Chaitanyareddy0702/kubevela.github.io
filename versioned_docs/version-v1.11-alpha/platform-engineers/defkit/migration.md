@@ -131,20 +131,24 @@ output: {
     metadata: name: context.name
     spec: {
         replicas: parameter.replicas
-        template: spec: containers: [{
-            name:  context.name
-            image: parameter.image
-            if parameter.cpu != _|_ {
-                resources: limits: cpu: parameter.cpu
-            }
-            if parameter.env != _|_ {
-                env: parameter.env
-            }
-            ports: [for p in parameter.ports {
-                containerPort: p.port
-                protocol:      p.protocol
+        selector: matchLabels: "app.oam.dev/component": context.name
+        template: {
+            metadata: labels: "app.oam.dev/component": context.name
+            spec: containers: [{
+                name:  context.name
+                image: parameter.image
+                if parameter.cpu != _|_ {
+                    resources: limits: cpu: parameter.cpu
+                }
+                if parameter.env != _|_ {
+                    env: parameter.env
+                }
+                ports: [for p in parameter.ports {
+                    containerPort: p.port
+                    protocol:      p.protocol
+                }]
             }]
-        }]
+        }
     }
 }
 ```
@@ -168,6 +172,8 @@ func myTemplate(tpl *defkit.Template) {
     deployment := defkit.NewResource("apps/v1", "Deployment").
         Set("metadata.name", vela.Name()).
         Set("spec.replicas", replicas).
+        Set("spec.selector.matchLabels[app.oam.dev/component]", vela.Name()).
+        Set("spec.template.metadata.labels[app.oam.dev/component]", vela.Name()).
         Set("spec.template.spec.containers[0].name",  vela.Name()).
         Set("spec.template.spec.containers[0].image", image).
         Set("spec.template.spec.containers[0].ports", containerPorts).
@@ -177,6 +183,10 @@ func myTemplate(tpl *defkit.Template) {
     tpl.Output(deployment)
 }
 ```
+
+:::caution Deployments require selector ↔ template.labels parity
+A Deployment is invalid without `spec.selector.matchLabels` matching `spec.template.metadata.labels`. Both the CUE and Go templates above use `app.oam.dev/component: context.name` (the standard KubeVela component-label convention) so the workload that lands in the cluster passes the admission webhook. If you forget this on the migration, both forms fail identically — which is itself a small proof of semantic equivalence between CUE and defkit.
+:::
 
 **Mapping rules:**
 
@@ -252,14 +262,14 @@ func init() { defkit.Register(MyTrait()) }
 ## Step 4 — Migrate Health & Status
 
 ```cue title="CUE — health and status"
-isHealth: (
-    context.output.status.observedGeneration ==
-    context.output.metadata.generation
-) && (
-    context.output.status.readyReplicas ==
-    context.output.status.replicas
-) && (context.output.status.replicas > 0)
+isHealth: context.output.status.observedGeneration == context.output.metadata.generation &&
+  context.output.status.readyReplicas == context.output.status.replicas &&
+  context.output.status.replicas > 0
 ```
+
+:::caution Keep `isHealth` line-break-safe
+The KubeVela controller's healthPolicy CUE evaluator is sensitive to where you break long expressions. Break **after `&&`** (or keep the whole thing on one line). **Do not** break a comparison so that `==` ends a line — `field1 ==\nfield2` evaluates to `false` even when both fields are equal. This is one of the reasons the doc recommends `HealthPolicyExpr` (Option B below): the builder emits a single-line, controller-safe expression.
+:::
 
 **Option A — use the built-in preset** (matches Deployment's standard readiness check):
 
