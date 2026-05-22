@@ -7,9 +7,13 @@ import TabItem from '@theme/TabItem';
 
 Complete end-to-end definition examples — one per definition type — showing real-world usage patterns with full Go source, generated definition YAML, and a working `Application` validated against a live cluster.
 
+All Go sources below are taken from the [`kubevela/vela-go-definitions`](https://github.com/kubevela/vela-go-definitions) repository — each section links to its canonical file.
+
 ## Component Definition — Task
 
 A complete task component that runs a one-time Job to completion. Uses `JobHealth`/`CustomStatus` presets, `OneOf` for typed volume variants, `Each` for volumeMount/volume array mapping, and `MapVariant` for per-type volume configuration.
+
+> Source: [`components/task.go`](https://github.com/kubevela/vela-go-definitions/blob/main/components/task.go).
 
 <Tabs>
 <TabItem value="go" label="Go — defkit">
@@ -512,6 +516,8 @@ $ kubectl get job task-demo-hello-task -n default \
 
 A complete cpuscaler trait that creates an HPA resource to automatically scale the component based on CPU usage. Demonstrates `tpl.Outputs()` for emitting a secondary resource from a trait.
 
+> Source: [`traits/cpuscaler.go`](https://github.com/kubevela/vela-go-definitions/blob/main/traits/cpuscaler.go).
+
 <Tabs>
 <TabItem value="go" label="Go — defkit">
 
@@ -658,6 +664,8 @@ kind=Deployment target=scaled-web min=1 max=3
 ## Policy Definition — Apply Once
 
 A complete apply-once policy that allows configuration drift for applied resources. Demonstrates `defkit.NewPolicy` with inline `Helper` type definitions and `WithSchemaRef` for type reuse across params.
+
+> Source: [`policies/apply_once.go`](https://github.com/kubevela/vela-go-definitions/blob/main/policies/apply_once.go).
 
 :::info
 Policies use only `.Params()` — no `.Template()` — because KubeVela's built-in engine processes policy params directly. `.Helper("TypeName", struct)` registers a named CUE type (`#TypeName`) that can be referenced via `.WithSchemaRef("TypeName")` in other params.
@@ -822,6 +830,8 @@ $ kubectl get app apply-once-demo -n default -o jsonpath='{.spec.policies}' | py
 ## WorkflowStep Definition — Apply Component
 
 A complete apply-component workflow step. The simplest definition type — workflow steps often require no template at all because the step execution is handled by KubeVela's built-in step executor.
+
+> Source: [`workflowsteps/apply_component.go`](https://github.com/kubevela/vela-go-definitions/blob/main/workflowsteps/apply_component.go).
 
 <Tabs>
 <TabItem value="go" label="Go — defkit">
