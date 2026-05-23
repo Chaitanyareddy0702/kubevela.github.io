@@ -53,7 +53,7 @@ Use `ForEachWithGuardedFiltered` when you need *both* an outer guard (the source
 
 ## Example
 
-Let's build a `web-service` component that wires a `Deployment` and an optional `Service` from a `ports` parameter and a `env` parameter — every port entry contributes a named container port, entries marked `expose: true` additionally publish a service port, and every env entry becomes a container env var (with a string fallback when `value` is omitted). The component shows how the four `ForEachWith*` variants cooperate from different source arrays, with `ItemBuilder` assembling per-item conditionals, defaults, let bindings, and field-existence checks.
+Let's build a `web-service` component that wires a `Deployment` and an optional `Service` from a `ports` parameter and a `env` parameter — every port entry contributes a named container port, entries marked `expose: true` additionally publish a service port (with the Service itself emitted only when at least one port asks to be exposed, so we don't ship a Kubernetes-invalid Service with empty `spec.ports`), and every env entry becomes a container env var (with a string fallback when `value` is omitted). The component shows how the four `ForEachWith*` variants cooperate from different source arrays, with `ItemBuilder` assembling per-item conditionals, defaults, let bindings, and field-existence checks.
 
 Behind the scenes the example exercises every helper on this page in a single template — `ForEachWith` to build the container-port array (using `IfSet`/`IfNotSet`, `Let`, and `SetDefault` to derive `port-<N>` names when the user omits one), `ForEachWithVar` with a custom iteration name to build the env array (using `item.If` with `item.FieldExists`/`item.FieldNotExists` for the value fallback and `item.Var().Ref()` to embed the source element as a hidden CUE binding), `ForEachWithGuardedFiltered` with `defkit.FieldEquals("expose", true)` to build the filtered service-port array, and `WithImports("strconv")` so the generated CUE can call `strconv.FormatInt(...)`. `ForEachWithGuardedFilteredVar` takes the same arguments plus a leading `varName` if you need to rename the iteration variable; pair it with var-aware predicates when you do. `defkit.ItemFieldIsSet` returns a `Condition` for the `tpl.Helper().PickIf()` projector and is covered in the [Helper Builder](./template-helper-builder.md) page. Building on the `my-platform` module scaffolded in [Quick Start](./quick-start.md), drop the file below into `my-platform/components/`.
 
@@ -176,7 +176,10 @@ func webServiceTemplate(tpl *defkit.Template) {
         Set("spec.ports", servicePorts)
 
     tpl.Output(dep)
-    tpl.Outputs("service", svc)
+    // Emit the Service only when at least one port has expose: true. Always
+    // emitting it would leave spec.ports empty when no port is exposed and
+    // the Kubernetes API server rejects that ("spec.ports: Required value").
+    tpl.OutputsIf(defkit.HasExposedPorts(ports), "service", svc)
 }
 
 func init() { defkit.Register(WebService()) }
@@ -241,18 +244,22 @@ template: {
       }
     }
   }
-  outputs: service: {
-    apiVersion: "v1"
-    kind:       "Service"
-    metadata: name: context.name
-    spec: {
-      selector: "app.oam.dev/component": context.name
-      ports: [
-        if parameter["ports"] != _|_ for v in parameter.ports if v.expose == true {
-          port:       v.port
-          targetPort: v.port
-        },
-      ]
+  outputs: {
+    if len([for p in parameter.ports if p.expose == true { p }]) > 0 {
+      service: {
+        apiVersion: "v1"
+        kind:       "Service"
+        metadata: name: context.name
+        spec: {
+          selector: "app.oam.dev/component": context.name
+          ports: [
+            if parameter["ports"] != _|_ for v in parameter.ports if v.expose == true {
+              port:       v.port
+              targetPort: v.port
+            },
+          ]
+        }
+      }
     }
   }
   parameter: {

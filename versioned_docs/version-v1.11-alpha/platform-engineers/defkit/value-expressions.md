@@ -131,7 +131,7 @@ Auto-import: the generator detects required imports from these constructors and 
 
 Let's build a `namespaced-cache` component that renders a Redis `Deployment` and a `Service`, with the `apiVersion` adapted to the cluster's Kubernetes version via `VersionIf`. Users supply a target namespace, replica count, port, protocol, optional extra labels, and a TLS-disable toggle.
 
-Behind the scenes the template exercises every category of value expression in a single definition: `Interpolation` to compose the Redis connection URL and a `namespace:name` instance key; `Plus` to build the internal DNS address by string concatenation; `StringsToLower` to lowercase the protocol in the URL and the component name in a label value; `StrconvFormatInt` to convert the integer port to a string inline within the interpolation; `Lt` and `Ge` for cluster-version conditions passed to `VersionIf`; `Gt` with `SetIf` to emit the rolling-update strategy only when `replicas > 1`; `SpreadIf` with `labels.IsSet()` to conditionally merge user-supplied labels; `Not` with `enableTLS.IsTrue()` inside `NewArray().ItemIf()` to add a `TLS_DISABLED` env var only when TLS is off; and `Reference` to embed `context.namespace` in the URL interpolation. Building on the `my-platform` module scaffolded in [Quick Start](./quick-start.md), drop the file below into `my-platform/components/`.
+Behind the scenes the template exercises every category of value expression in a single definition: `Interpolation` to compose the Redis connection URL and a `namespace:name` instance key; `Plus` to build the internal DNS address by string concatenation; `StringsToLower` to lowercase the protocol in the URL and the component name in a label value; `StrconvFormatInt` to convert the integer port to a string inline within the interpolation; `Lt` and `Ge` for cluster-version conditions passed to `VersionIf`; `Gt` with `SetIf` to emit the rolling-update strategy only when `replicas > 1`; `SpreadIf` with `labels.IsSet()` to conditionally merge user-supplied labels; and `Not` with `enableTLS.IsTrue()` inside `NewArray().ItemIf()` to add a `TLS_DISABLED` env var only when TLS is off. Building on the `my-platform` module scaffolded in [Quick Start](./quick-start.md), drop the file below into `my-platform/components/`.
 
 <Tabs groupId="defkit-example">
 <TabItem value="go" label="Go — defkit">
@@ -147,7 +147,7 @@ func NamespacedCache() *defkit.ComponentDefinition {
     port       := defkit.Int("port").Default(6379).Description("Cache port")
     protocol   := defkit.String("protocol").Default("TCP").Values("TCP", "UDP").Description("Port protocol")
     labels     := defkit.StringKeyMap("labels").Optional().Description("Additional pod labels")
-    enableTLS  := defkit.Bool("enableTLS").Default(false).Description("Disable TLS and emit TLS_DISABLED env var")
+    enableTLS  := defkit.Bool("enableTLS").Default(false).Description("Enable TLS for the cache; when false (default) the container receives a TLS_DISABLED=true env var so the runtime knows TLS is off")
 
     return defkit.NewComponent("namespaced-cache").
         Description("Redis-like cache showcasing Value Expression helpers").
@@ -170,12 +170,16 @@ func namespacedCacheTemplate(tpl *defkit.Template) {
     // StrconvFormatInt: convert the integer port to a string inline.
     portStr := defkit.StrconvFormatInt(port, 10)
 
-    // Interpolation + StringsToLower + StrconvFormatInt + Reference:
+    // Interpolation + StringsToLower + StrconvFormatInt:
     // compose the Redis connection URL from mixed literals and expressions.
+    // Use the user-supplied `namespace` parameter, not `context.namespace` —
+    // the Service is deployed into parameter.namespace (see metadata.namespace
+    // below); referencing context.namespace would point the URL at the
+    // Application's namespace when the two differ.
     redisURL := defkit.Interpolation(
         defkit.StringsToLower(protocol),
         defkit.Lit("://"),
-        defkit.Reference("context.namespace"),
+        namespace,
         defkit.Lit(".svc:"),
         portStr,
     )
@@ -317,7 +321,7 @@ template: {
           env: [
             {
               name:  "REDIS_URL"
-              value: "\(strings.ToLower(parameter.protocol))://\(context.namespace).svc:\(strconv.FormatInt(parameter.port, 10))"
+              value: "\(strings.ToLower(parameter.protocol))://\(parameter.namespace).svc:\(strconv.FormatInt(parameter.port, 10))"
             },
             {
               name:  "INSTANCE_KEY"
@@ -365,7 +369,7 @@ template: {
     protocol: *"TCP" | "UDP"
     // +usage=Additional pod labels
     labels?: [string]: string
-    // +usage=Disable TLS and emit TLS_DISABLED env var
+    // +usage=Enable TLS for the cache; when false (default) the container receives a TLS_DISABLED=true env var so the runtime knows TLS is off
     enableTLS: *false | bool
   }
 }

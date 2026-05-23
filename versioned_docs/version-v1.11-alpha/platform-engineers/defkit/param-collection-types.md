@@ -95,7 +95,7 @@ These methods produce `Condition` values for use with `.SetIf()`, `.If()`/`.EndI
 
 ## Example
 
-Let's build a `collection-types-demo` component that puts every collection-parameter API through its paces: `StringList` for a `tags` array (verified via `.IsSet()` and `tags[0]` reference), `IntList` for an `allowedPorts` allowlist (verified via `.IsNotEmpty()`), `Array().WithFields(...).MinItems(1).MaxItems(20)` for a structured `ports` array (verified by the rendered container ports and Service filtering), `StringKeyMap` for `labels` (verified by the spread onto the Deployment), `Map().Of(ParamTypeString)` for `annotations` (same CUE shape as `StringKeyMap`, verified by the annotation spread), and `Map().WithFields(...).Field(...)` for a structured `config` object (verified by `config.Field("logLevel")` landing as a pod label). Building on the `my-platform` module scaffolded in [Quick Start](./quick-start.md), drop the file below into `my-platform/components/`.
+Let's build a `collection-types-demo` component that puts every collection-parameter API through its paces: `StringList` for a `tags` array (verified via `.IsNotEmpty()` and `tags[0]` reference — using `.IsSet()` here would still fire when a user passes `tags: []` and then crash on the `tags[0]` index, so the guard must also check `len > 0`), `IntList` for an `allowedPorts` allowlist (verified via `.IsNotEmpty()`), `Array().WithFields(...).MinItems(1).MaxItems(20)` for a structured `ports` array (verified by the rendered container ports and Service filtering), `StringKeyMap` for `labels` (verified by the spread onto the Deployment), `Map().Of(ParamTypeString)` for `annotations` (same CUE shape as `StringKeyMap`, verified by the annotation spread), and `Map().WithFields(...).Field(...)` for a structured `config` object (verified by `config.Field("logLevel")` landing as a pod label). Building on the `my-platform` module scaffolded in [Quick Start](./quick-start.md), drop the file below into `my-platform/components/`.
 
 <Tabs groupId="defkit-example">
 <TabItem value="go" label="Go — defkit">
@@ -180,7 +180,7 @@ func collectionTypesDemoTemplate(tpl *defkit.Template) {
         SetIf(config.IsSet(), "spec.template.metadata.labels[log-level]", config.Field("logLevel")).
         Set("spec.selector.matchLabels[app.oam.dev/component]", vela.Name()).
         Set("spec.template.metadata.labels[app.oam.dev/component]", vela.Name()).
-        SetIf(tags.IsSet(), "spec.template.metadata.labels[tags]", defkit.ParamRef("tags[0]")).
+        SetIf(tags.IsNotEmpty(), "spec.template.metadata.labels[tags]", defkit.ParamRef("tags[0]")).
         Set("spec.template.spec.containers[0].name", vela.Name()).
         Set("spec.template.spec.containers[0].image", defkit.Lit("nginx:stable")).
         SetIf(ports.IsSet(), "spec.template.spec.containers[0].ports", containerPorts)
@@ -250,7 +250,7 @@ template: {
             if parameter["config"] != _|_ {
               "log-level": parameter.config.logLevel
             }
-            if parameter["tags"] != _|_ {
+            if parameter["tags"] != _|_ if len(parameter["tags"]) > 0 {
               "tags": parameter.tags[0]
             }
           }
@@ -412,7 +412,7 @@ $ kubectl get deployment collection-types -n default \
 labels=staging,platform pod-labels={"app.oam.dev/component":"collection-types","log-level":"debug","tags":"backend"}
 ```
 
-`tags[0] = "backend"` lands as pod label `tags=backend` via `StringList.IsSet()`. `allowedPorts: [...]int` generates `[...int]` schema (enforced at apply time). `ports.MinItems(1).MaxItems(20)` emits `list.MinItems(1) & list.MaxItems(20) & [...]` in the `parameter:` block. `labels` (a `StringKeyMap`) spreads `env=staging, team=platform` onto the Deployment via `labels.IsSet()`. `annotations` (a `Map().Of(ParamTypeString)`) emits the same `[string]: string` CUE shape and lands `owner=platform-team`. `config.Field("logLevel")` resolves to `parameter.config.logLevel` and writes `log-level=debug` as a pod label. The Service contains only the `expose: true` port (`8080`); the `expose: false` port (`9090`) is absent because `ForEachWithGuardedFiltered(..., FieldEquals("expose", true), ...)` filters it out.
+`tags[0] = "backend"` lands as pod label `tags=backend` via `StringList.IsNotEmpty()` (which expands to `parameter["tags"] != _|_ if len(parameter["tags"]) > 0` — both presence *and* non-empty, so an explicit `tags: []` is skipped instead of crashing the index lookup). `allowedPorts: [...]int` generates `[...int]` schema (enforced at apply time). `ports.MinItems(1).MaxItems(20)` emits `list.MinItems(1) & list.MaxItems(20) & [...]` in the `parameter:` block. `labels` (a `StringKeyMap`) spreads `env=staging, team=platform` onto the Deployment via `labels.IsSet()`. `annotations` (a `Map().Of(ParamTypeString)`) emits the same `[string]: string` CUE shape and lands `owner=platform-team`. `config.Field("logLevel")` resolves to `parameter.config.logLevel` and writes `log-level=debug` as a pod label. The Service contains only the `expose: true` port (`8080`); the `expose: false` port (`9090`) is absent because `ForEachWithGuardedFiltered(..., FieldEquals("expose", true), ...)` filters it out.
 
 Clean up afterwards:
 

@@ -15,7 +15,11 @@ Definitions rarely exist in isolation. A typical module needs a few things to be
 - A **secret** or **ConfigMap** with credentials needs to be in place
 - After applying, a **smoke test** should confirm the definitions actually register and are visible to applications
 
-Module hooks let you encode these steps next to the definitions they support, so `vela def apply-module` becomes a single atomic operation: setup → apply → verify.
+Module hooks let you encode these steps next to the definitions they support, so `vela def apply-module` runs setup → apply → verify in a single command.
+
+:::caution Not transactional
+A module apply is **not** atomic: there is no rollback. Definition failures during the apply phase are recorded but do not halt subsequent `post-apply` hooks, and a `post-apply` hook failure leaves already-applied definitions in place. See [Execution Order](#execution-order) for the exact semantics.
+:::
 
 ## `module.yaml` Schema
 
@@ -74,7 +78,7 @@ hooks:
   pre-apply:
     - path: hooks/pre        # directory under <module root>
       wait: true             # wait for resources to be ready
-      timeout: 1m            # bound the whole hook
+      timeout: 1m            # bounds the readiness wait only, not the apply phase (path hooks)
 ```
 
 Inside that directory you can place anything that `kubectl apply -f` would accept:

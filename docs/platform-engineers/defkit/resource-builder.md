@@ -105,7 +105,7 @@ func ScalableService() *defkit.ComponentDefinition {
     labels             := defkit.StringKeyMap("labels").Optional()
     annotations        := defkit.StringKeyMap("annotations").Optional()
     volumes            := defkit.List("volumes").Description("Pod volumes")
-    extraMounts        := defkit.Array("extraVolumeMounts").Optional()
+    extraMounts        := defkit.Array("extraVolumeMounts").Description("Additional container volumeMounts appended via ArrayConcat — required so the generated `[...] + parameter.extraVolumeMounts` is always well-formed; pass `[]` when none are needed")
     customMetrics      := defkit.Array("customMetrics").Optional()
     minReplicas        := defkit.Int("minReplicas").Default(1)
     maxReplicas        := defkit.Int("maxReplicas").Default(10)
@@ -502,7 +502,7 @@ template: {
     annotations?: [string]: string
     // +usage=Pod volumes
     volumes: [..._]
-    extraVolumeMounts?: [..._]
+    extraVolumeMounts: [..._]
     customMetrics?: [..._]
     minReplicas: *1 | int
     maxReplicas: *10 | int

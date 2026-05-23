@@ -330,7 +330,7 @@ Services:
     No trait applied
 ```
 
-Once the Application reaches `running`, inspect the rendered Deployment to confirm each complex type landed correctly. Output below was captured live against a k3d cluster:
+Once the Application reaches `running`, inspect the rendered Deployment to confirm that `resources`, `config`, and `storage` landed correctly. `endpoint` is a schema-only demonstration here — see the note after the captured output. Output below was captured live against a k3d cluster:
 
 ```shell
 $ kubectl get deployment complex-types -n default \
@@ -357,7 +357,9 @@ $ kubectl get deployment complex-types -n default \
 NAME=complex-types READY=1/1
 ```
 
-`resources.Field("cpu")` resolves to `parameter.resources.cpu` and lands `250m` in the container resource requests. `config.Field("logLevel")` resolves to `parameter.config.logLevel` and writes `log-level=debug` as a pod label. `storage: pvc` activates the `pvc` branch of the `OneOf` enum, making `size` and `storageClass` required and writing `storage-type=pvc` as a pod label via `storage.IsSet()`. The `ClosedUnion` endpoint parameter accepts `{ type: ClusterIP, port: 8080 }` and rejects any extra fields not declared in the matching `ClosedStruct` option.
+`resources.Field("cpu")` resolves to `parameter.resources.cpu` and lands `250m` in the container resource requests. `config.Field("logLevel")` resolves to `parameter.config.logLevel` and writes `log-level=debug` as a pod label. `storage: pvc` activates the `pvc` branch of the `OneOf` enum, making `size` and `storageClass` required and writing `storage-type=pvc` as a pod label via `storage.IsSet()`.
+
+The `endpoint` `ClosedUnion` parameter is **schema-only** in this template. The Application's `endpoint: { type: ClusterIP, port: 8080 }` is validated against the closed disjunction (extra fields are rejected by CUE), but it is never consumed by `complexTypesDemoTemplate` and therefore does not appear on the rendered Deployment. This is by design of the fluent API: `ClosedUnionParam` exposes `Options/Required/Optional/Description` only — there is no `.Field()` accessor analogous to `Struct.Field()` / `Object.Field()`, because each option may declare a different field set. To consume an inner value from a template, drop into raw CUE with `defkit.Reference("parameter.endpoint.type")` (and remember that for the disjunction to resolve, each option must differ in at least one literal-valued field — `*"X" | string` defaults are too permissive to discriminate when the user supplies the field).
 
 Clean up afterwards:
 

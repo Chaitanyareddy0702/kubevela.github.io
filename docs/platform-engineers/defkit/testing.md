@@ -573,21 +573,23 @@ vela up -f testing-demo-app.yaml   # type: testing-demo, properties: image+repli
 ```
 
 ```
-NAME            COMPONENT          TYPE           PHASE     HEALTHY   STATUS   AGE
-audit-testing   testing-demo-app   testing-demo   running   true               15s
+NAME               COMPONENT      TYPE           PHASE     HEALTHY   STATUS   AGE
+testing-demo-app   testing-demo   testing-demo   running   true               15s
 ```
 
+The rendered Deployment and Service are named after the component (`context.name`), not the Application — `metadata.name` in the template is set to `vela.Name()`, which resolves to the component name (`testing-demo`).
+
 ```shell
-kubectl get deployment testing-demo-app -o jsonpath='{.spec.replicas} {.spec.template.spec.containers[0].image}'
+kubectl get deployment testing-demo -o jsonpath='{.spec.replicas} {.spec.template.spec.containers[0].image}'
 # 1 nginx:stable
-kubectl get service testing-demo-app -o jsonpath='{.spec.ports}'
+kubectl get service testing-demo -o jsonpath='{.spec.ports}'
 # [{"port":8080,"protocol":"TCP","targetPort":8080}]
 ```
 
 Clean up:
 
 ```shell
-vela delete audit-testing --namespace default -y
+vela delete testing-demo-app --namespace default -y
 kubectl delete componentdefinition testing-demo -n vela-system
 kubectl delete configmap vela-cluster-identity -n vela-system
 ```

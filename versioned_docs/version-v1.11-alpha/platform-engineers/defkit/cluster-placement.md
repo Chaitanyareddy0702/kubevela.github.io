@@ -90,7 +90,7 @@ When `vela def apply-module` runs it prints the labels it evaluated against — 
 
 ## Example
 
-Let's build a `placement-demo` component that targets production cloud clusters. Behind the scenes the template exercises every API listed above: `placement.Label(...).Exists()`, `placement.Label(...).In(...)`, `placement.Label(...).Ne(...)`, `placement.Label(...).Eq(...)`, `placement.All(...)`, `placement.Any(...)`, `placement.Not(...)`, `.RunOn(...)`, and `.NotRunOn(...)`. The `module.yaml` tab shows how to declare the same constraints at module scope. Building on the `my-platform` module scaffolded in [Quick Start](./quick-start.md), drop the file below into `my-platform/components/`.
+Let's build a `placement-demo` component that targets production cloud clusters. Behind the scenes the template exercises every API listed above: `placement.Label(...).Exists()`, `placement.Label(...).In(...)`, `placement.Label(...).Ne(...)`, `placement.Label(...).Eq(...)`, `placement.All(...)`, `placement.Any(...)`, `placement.Not(...)`, `.RunOn(...)`, and `.NotRunOn(...)`. The `module.yaml` tab shows the closest module-scope equivalent — note that `module.yaml`'s `placement` block only accepts flat `LabelCondition` entries (combinators like `All`/`Any`/`Not` are Go-only), so the `Any(In(...), Eq("on-prem"))` branch is flattened into a single `In` and the `Ne("development")` condition is kept as a sibling entry; if you need real OR/NOT semantics at module scope, express them per-definition in Go. Building on the `my-platform` module scaffolded in [Quick Start](./quick-start.md), drop the file below into `my-platform/components/`.
 
 <Tabs groupId="defkit-example">
 <TabItem value="go" label="Go — defkit">
@@ -236,6 +236,9 @@ spec:
       - key: provider
         operator: In
         values: ["aws", "gcp", "azure", "on-prem"]
+      - key: environment
+        operator: Ne
+        values: ["development"]
     notRunOn:
       - key: cluster-type
         operator: Eq
